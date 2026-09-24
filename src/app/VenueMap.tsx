@@ -133,7 +133,13 @@ export default function VenueMap({
     const m = map.current;
     const v = venues.find((x) => x.name === selected);
     if (!m || !v) return;
-    m.easeTo({ center: [v.lng, v.lat], offset: [0, -Math.round(window.innerHeight * 0.2)], duration: 350 });
+    // Mobile: lift above the bottom sheet. Desktop: shift right of the 400px side panel.
+    const desktop = window.matchMedia("(min-width: 768px)").matches;
+    m.easeTo({
+      center: [v.lng, v.lat],
+      offset: desktop ? [200, 0] : [0, -Math.round(window.innerHeight * 0.25)],
+      duration: 350,
+    });
   }, [selected, venues]);
 
   return <div ref={el} className="h-full w-full" />;

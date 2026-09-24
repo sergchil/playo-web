@@ -34,6 +34,9 @@ export interface Venue {
   sports: string[];
   url: string | null;
   bookingUrl: string;
+  /** Venue photos (Gumlet CDN; append ?w=…&format=auto to resize). */
+  images: string[];
+  amenities: string[];
 }
 
 async function req(method: string, path: string, body?: unknown, params?: Record<string, string | number>) {
@@ -80,6 +83,11 @@ function slimVenue(v: Record<string, unknown>): Venue {
     sports: (v.sports as string[]) || [],
     url: keys[0] ? `https://playo.co/venues/dubai/${keys[0]}` : null,
     bookingUrl: `https://playo.co/booking?venueId=${id}`,
+    images: [v.coverImage as string, ...(((v.images as { url?: string }[]) || []).map((i) => i.url as string))]
+      .filter((u): u is string => typeof u === "string" && u.startsWith("http"))
+      .filter((u, i, a) => a.indexOf(u) === i)
+      .slice(0, 8),
+    amenities: ((v.amenities as string[]) || []).slice(0, 6),
   };
 }
 
