@@ -184,7 +184,9 @@ export default function Home() {
   return (
     <div className="flex-1">
       {/* Filters — the whole top of the app */}
-      <div className="sticky top-0 z-20 border-b border-line bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur-sm">
+      {/* Opaque, and its white extends upward so cards scrolled above the bar never
+          show through translucent in-app browser chrome (iOS 26 / Telegram). */}
+      <div className="sticky top-0 z-20 border-b border-line bg-white pt-[env(safe-area-inset-top)] before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-screen before:bg-white before:content-['']">
         <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-3 sm:px-6">
           <div className="rail rail-fade -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
             {days.map((d) => {
