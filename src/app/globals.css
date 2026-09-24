@@ -41,6 +41,9 @@ body {
 .rail-fade {
   mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
 }
+input[type="search"]::-webkit-search-cancel-button {
+  appearance: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
   * {

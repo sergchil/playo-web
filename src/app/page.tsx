@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FindSlotsResult, FreeWindow, SlotResult } from "@/lib/findSlots";
 import { useFavorites } from "@/lib/useFavorites";
 
@@ -100,32 +100,6 @@ function WindowBar({ windows, from }: { windows: FreeWindow[]; from: string }) {
   );
 }
 
-function Pill({
-  active,
-  onClick,
-  children,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  label?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      aria-label={label}
-      className={`h-10 shrink-0 rounded-full px-4 text-sm font-medium transition-colors cursor-pointer ${
-        active ? "bg-ink text-white" : "bg-chip text-ink hover:bg-chip-hover"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg viewBox="0 0 24 24" className="size-5" aria-hidden="true">
@@ -152,6 +126,54 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
+function Segmented<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+  className = "",
+}: {
+  label: string;
+  value: T;
+  options: { v: T; label: string }[];
+  onChange: (v: T) => void;
+  className?: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className={`flex h-9 rounded-full bg-chip p-0.5 ${className}`}>
+      {options.map((o) => (
+        <button
+          key={o.v}
+          type="button"
+          role="radio"
+          aria-checked={value === o.v}
+          onClick={() => onChange(o.v)}
+          className={`min-w-0 flex-1 cursor-pointer rounded-full px-2 text-sm font-semibold transition-colors ${
+            value === o.v ? "bg-ink text-white" : "text-ink hover:bg-chip-hover"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-[18px]" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+const SPORTS: { v: Sport; label: string }[] = [
+  { v: "both", label: "All" },
+  { v: "football", label: "Football" },
+  { v: "futsal", label: "Futsal" },
+];
+
 export default function Home() {
   const [fridaysOnly, setFridaysOnly] = useState(true);
   const days = useMemo(() => dayChips(fridaysOnly), [fridaysOnly]);
@@ -173,6 +195,52 @@ export default function Home() {
   const [data, setData] = useState<FindSlotsResult | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [compact, setCompact] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [spacerH, setSpacerH] = useState(150);
+  const headerRef = useRef<HTMLElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const typingRef = useRef(false);
+
+  // Spacer tracks the full (expanded) header height, including the safe-area inset.
+  useEffect(() => {
+    const panel = panelRef.current;
+    const header = headerRef.current;
+    if (!panel || !header) return;
+    const measure = () => {
+      const inset = parseFloat(getComputedStyle(header).paddingTop) || 0;
+      setSpacerH(panel.offsetHeight + inset + 1);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(panel);
+    return () => ro.disconnect();
+  }, []);
+
+  // Apple-style: shrink to one line on scroll down, open again on a deliberate scroll up or at the top.
+  useEffect(() => {
+    let lastY = window.scrollY;
+    let upTravel = 0;
+    const onScroll = () => {
+      const y = window.scrollY;
+      const dy = y - lastY;
+      lastY = y;
+      if (y < 40) {
+        upTravel = 0;
+        setCompact(false);
+        return;
+      }
+      if (dy > 0) {
+        upTravel = 0;
+        if (y > 120 && !typingRef.current) setCompact(true);
+      } else if (dy < 0) {
+        upTravel -= dy;
+        if (upTravel > 80) setCompact(false);
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const { favorites, isFavorite, toggle, loaded } = useFavorites();
 
@@ -241,132 +309,173 @@ export default function Home() {
       return next;
     });
 
+  const summary = [
+    (() => {
+      const d = new Date(`${date}T12:00:00`);
+      return `${d.toLocaleDateString("en-US", { weekday: "short" })} ${d.getDate()} ${d.toLocaleDateString("en-US", { month: "short" })}`;
+    })(),
+    `${timeFrom}+`,
+    dur(need),
+    SPORTS.find((x) => x.v === sport)!.label,
+    ...(area.trim() ? [`“${area.trim()}”`] : []),
+  ].join(" · ");
+
   return (
     <div className="flex-1">
-      {/* Filters — the whole top of the app */}
-      {/* Opaque, and its white extends upward so cards scrolled above the bar never
-          show through translucent in-app browser chrome (iOS 26 / Telegram). */}
-      <div className="sticky top-0 z-20 border-b border-line bg-white pt-[env(safe-area-inset-top)] before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-screen before:bg-white before:content-['']">
-        <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-3 sm:px-6">
-          <div className="flex items-stretch gap-2">
-          <button
-            type="button"
-            onClick={toggleFridays}
-            aria-pressed={!fridaysOnly}
-            aria-label={fridaysOnly ? "Show all days" : "Show Fridays only"}
-            className="flex h-14 w-16 shrink-0 cursor-pointer flex-col items-center justify-center rounded-2xl border border-ink/15 text-ink transition-colors hover:bg-chip"
-          >
-            <span className="text-xs text-muted">{fridaysOnly ? "Fridays" : "All days"}</span>
-            <span className="text-sm font-semibold">{fridaysOnly ? "All →" : "Fri →"}</span>
-          </button>
-          <div className="rail rail-fade -mr-4 flex min-w-0 flex-1 gap-2 overflow-x-auto pr-4 sm:mr-0 sm:pr-0">
-            {days.map((d) => {
-              const active = d.iso === date;
-              return (
-                <button
-                  key={d.iso}
-                  type="button"
-                  onClick={() => setDate(d.iso)}
-                  aria-pressed={active}
-                  className={`flex h-14 w-16 shrink-0 cursor-pointer flex-col items-center justify-center rounded-2xl transition-colors ${
-                    active ? "bg-ink text-white" : "bg-chip text-ink hover:bg-chip-hover"
-                  }`}
-                >
-                  <span className={`text-xs ${active ? "text-white/70" : "text-muted"}`}>{d.dow}</span>
-                  <span className="text-sm font-semibold">{d.dom}</span>
-                </button>
-              );
-            })}
-          </div>
-          </div>
-
-          <div className="rail -mx-4 flex items-center gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-            <Pill active={sport === "both"} onClick={() => setSport("both")}>
-              All
-            </Pill>
-            <Pill active={sport === "football"} onClick={() => setSport("football")}>
-              Football
-            </Pill>
-            <Pill active={sport === "futsal"} onClick={() => setSport("futsal")}>
-              Futsal
-            </Pill>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div
-              role="radiogroup"
-              aria-label="Booking length"
-              className="flex h-10 flex-1 rounded-full bg-chip p-1"
-            >
-              {NEEDS.map((n) => (
-                <button
-                  key={n.v}
-                  type="button"
-                  role="radio"
-                  aria-checked={need === n.v}
-                  onClick={() => setNeed(n.v)}
-                  className={`flex-1 cursor-pointer rounded-full text-sm font-semibold transition-colors ${
-                    need === n.v ? "bg-ink text-white" : "text-ink hover:bg-chip-hover"
-                  }`}
-                >
-                  {n.label}
-                </button>
-              ))}
-            </div>
-            <label className="relative shrink-0">
-              <span className="sr-only">Start time from</span>
-              <select
-                value={timeFrom}
-                onChange={(e) => setTimeFrom(e.target.value)}
-                className="h-10 cursor-pointer appearance-none rounded-full bg-chip pl-4 pr-9 text-sm font-medium text-ink hover:bg-chip-hover"
+      {/* Fixed header over a spacer the height of the full filters, so collapsing never shifts the list.
+          Its white extends upward so cards never show through translucent in-app browser chrome. */}
+      <div style={{ height: spacerH }} aria-hidden="true" />
+      <header
+        ref={headerRef}
+        className="fixed inset-x-0 top-0 z-20 border-b border-line bg-white pt-[env(safe-area-inset-top)] before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-screen before:bg-white before:content-['']"
+      >
+        {/* Collapsed: one-line summary. Tap to open filters. */}
+        <div className={`grid transition-[grid-template-rows] duration-200 ${compact ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+          <div className="overflow-hidden">
+            <div className="mx-auto flex max-w-5xl items-center gap-2 px-4 py-2 sm:px-6">
+              <button
+                type="button"
+                onClick={() => setCompact(false)}
+                aria-label={`Filters: ${summary}. Tap to change`}
+                tabIndex={compact ? 0 : -1}
+                className="flex h-10 min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 rounded-full bg-chip pl-4 pr-3 text-sm font-semibold"
               >
-                {HOURS.map((h) => (
-                  <option key={h} value={h}>
-                    From {h}
-                  </option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink">
+                <span className="truncate tabular-nums">{summary}</span>
                 <Chevron open={false} />
-              </span>
-            </label>
-          </div>
-
-          <div className="flex items-center gap-2">
-          <label className="relative block flex-1">
-            <span className="sr-only">Area or venue</span>
-            <svg
-              viewBox="0 0 24 24"
-              className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted"
-              aria-hidden="true"
-            >
-              <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
-              <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            <input
-              type="search"
-              inputMode="search"
-              value={area}
-              onChange={(e) => setArea(e.target.value)}
-              placeholder="Area or venue"
-              className="h-11 w-full rounded-full bg-chip pl-10 pr-4 text-base text-ink placeholder:text-muted focus:bg-white focus:outline-none focus:ring-2 focus:ring-ink"
-            />
-          </label>
-            <button
-              type="button"
-              onClick={() => setFavoritesOnly((v) => !v)}
-              aria-pressed={favoritesOnly}
-              aria-label="Show favourites only"
-              className={`flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-4 text-sm font-medium transition-colors ${
-                favoritesOnly ? "bg-ink text-white" : "bg-chip text-ink hover:bg-chip-hover"
-              }`}
-            >
-              <StarIcon filled={favoritesOnly} />
-              Saved
-            </button>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFavoritesOnly((v) => !v)}
+                aria-pressed={favoritesOnly}
+                aria-label="Show favourites only"
+                tabIndex={compact ? 0 : -1}
+                className={`grid size-10 shrink-0 cursor-pointer place-items-center rounded-full ${
+                  favoritesOnly ? "bg-ink text-white" : "bg-chip text-ink"
+                }`}
+              >
+                <StarIcon filled={favoritesOnly} />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+
+        {/* Expanded: full filters, three tight rows. */}
+        <div
+          className={`grid transition-[grid-template-rows] duration-200 ${compact ? "grid-rows-[0fr]" : "grid-rows-[1fr]"}`}
+          inert={compact}
+        >
+          <div className="overflow-hidden">
+            <div ref={panelRef} className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-2.5 sm:px-6">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleFridays}
+                  aria-pressed={!fridaysOnly}
+                  className={`h-9 shrink-0 cursor-pointer rounded-full px-3 text-sm font-semibold transition-colors ${
+                    fridaysOnly ? "border border-ink/15 text-ink" : "bg-ink text-white"
+                  }`}
+                >
+                  All days
+                </button>
+                <div className="rail rail-fade -mr-4 flex min-w-0 flex-1 gap-1.5 overflow-x-auto pr-4 sm:mr-0 sm:pr-0">
+                  {days.map((d) => {
+                    const active = d.iso === date;
+                    return (
+                      <button
+                        key={d.iso}
+                        type="button"
+                        onClick={() => setDate(d.iso)}
+                        aria-pressed={active}
+                        className={`h-9 shrink-0 cursor-pointer rounded-full px-3 text-sm font-semibold tabular-nums transition-colors ${
+                          active ? "bg-ink text-white" : "bg-chip text-ink hover:bg-chip-hover"
+                        }`}
+                      >
+                        {fridaysOnly ? d.dom : `${d.dow} ${d.dom.split(" ")[0]}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Segmented label="Sport" value={sport} options={SPORTS} onChange={setSport} className="flex-1" />
+                <label className="relative shrink-0">
+                  <span className="sr-only">Start time from</span>
+                  <select
+                    value={timeFrom}
+                    onChange={(e) => setTimeFrom(e.target.value)}
+                    className="h-9 cursor-pointer appearance-none rounded-full bg-chip pl-3 pr-8 text-sm font-semibold tabular-nums text-ink hover:bg-chip-hover"
+                  >
+                    {HOURS.map((h) => (
+                      <option key={h} value={h}>
+                        {h}+
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink">
+                    <Chevron open={false} />
+                  </span>
+                </label>
+              </div>
+
+              {searchOpen ? (
+                <div className="flex items-center gap-2">
+                  <label className="relative block flex-1">
+                    <span className="sr-only">Area or venue</span>
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
+                      <SearchIcon />
+                    </span>
+                    <input
+                      autoFocus
+                      type="search"
+                      inputMode="search"
+                      value={area}
+                      onChange={(e) => setArea(e.target.value)}
+                      onFocus={() => (typingRef.current = true)}
+                      onBlur={() => (typingRef.current = false)}
+                      placeholder="Area or venue"
+                      className="h-9 w-full rounded-full bg-chip pl-9 pr-3 text-base text-ink placeholder:text-muted focus:bg-white focus:outline-none focus:ring-2 focus:ring-ink"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setArea("");
+                      setSearchOpen(false);
+                    }}
+                    className="h-9 shrink-0 cursor-pointer px-1 text-sm font-semibold"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Segmented label="Booking length" value={need} options={NEEDS} onChange={setNeed} className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={() => setSearchOpen(true)}
+                    aria-label="Search area or venue"
+                    className="grid size-9 shrink-0 cursor-pointer place-items-center rounded-full bg-chip text-ink hover:bg-chip-hover"
+                  >
+                    <SearchIcon />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFavoritesOnly((v) => !v)}
+                    aria-pressed={favoritesOnly}
+                    aria-label="Show favourites only"
+                    className={`grid size-9 shrink-0 cursor-pointer place-items-center rounded-full transition-colors ${
+                      favoritesOnly ? "bg-ink text-white" : "bg-chip text-ink hover:bg-chip-hover"
+                    }`}
+                  >
+                    <StarIcon filled={favoritesOnly} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
 
       <main className="mx-auto max-w-5xl px-4 pb-16 pt-4 sm:px-6">
         {!loading && !error && data && (
