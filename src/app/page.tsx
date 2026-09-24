@@ -189,7 +189,8 @@ export default function Home() {
   const [timeFrom, setTimeFrom] = useState("20:00");
   const [need, setNeed] = useState<Need>(120);
   const [area, setArea] = useState("");
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [favoritesOnly, setFavoritesOnly] = useState(true);
+  const [venueInfo, setVenueInfo] = useState<Record<string, { area?: string; url?: string; bookingUrl?: string }>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<FindSlotsResult | null>(null);
@@ -263,6 +264,17 @@ export default function Home() {
     fetchSlots();
   }, [fetchSlots]);
 
+  // Venue directory (cached 1h) so favourites with nothing free can still show area + Playo link.
+  useEffect(() => {
+    fetch("/api/venues?sport=both")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { venues?: { name: string; area?: string; url?: string; bookingUrl?: string }[] } | null) => {
+        if (!j?.venues) return;
+        setVenueInfo(Object.fromEntries(j.venues.map((v) => [v.name, v])));
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
     setExpanded(new Set());
@@ -301,6 +313,29 @@ export default function Home() {
       });
   }, [data, area, favoritesOnly, favorites, isFavorite, need]);
 
+  // Favourites with nothing matching: always listed (after available favourites), marked unavailable.
+  const unavailableFavs = useMemo(() => {
+    if (!data) return [];
+    const q = area.trim().toLowerCase();
+    const shown = new Set(grouped.map((g) => g.venue));
+    return favorites
+      .filter((name) => !shown.has(name))
+      .map((name) => {
+        const rows = data.results.filter((r) => r.venue === name);
+        const info = venueInfo[name] ?? {};
+        const areaName = rows[0]?.area ?? info.area;
+        // Best shorter stretch, so you know if a shorter booking would work.
+        const shorter = rows
+          .flatMap((r) => r.windows ?? [])
+          .sort((a, b) => b.durationMin - a.durationMin || a.from.localeCompare(b.from))[0];
+        return { name, area: areaName, shorter, link: rows[0]?.bookingUrl ?? info.bookingUrl ?? info.url };
+      })
+      .filter((f) => !q || `${f.area ?? ""} ${f.name}`.toLowerCase().includes(q));
+  }, [data, area, favorites, grouped, venueInfo]);
+
+  // Split so unavailable favourites sit right below the available favourites, above everything else.
+  const favCount = grouped.filter((g) => isFavorite(g.venue)).length;
+
   const toggleOpen = (venue: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -319,6 +354,98 @@ export default function Home() {
     SPORTS.find((x) => x.v === sport)!.label,
     ...(area.trim() ? [`“${area.trim()}”`] : []),
   ].join(" · ");
+
+  const card = ({ venue, courts, best, cheapest }: (typeof grouped)[number]) => {
+    const open = expanded.has(venue);
+    const w = best.longest;
+    const fav = isFavorite(venue);
+    return (
+      <li key={venue} className="overflow-hidden rounded-xl bg-white shadow-card">
+        <div className="flex items-start gap-2 p-4">
+          <button
+            type="button"
+            onClick={() => toggleOpen(venue)}
+            aria-expanded={open}
+            className="min-w-0 flex-1 cursor-pointer text-left"
+          >
+            <h2 className="truncate text-base font-semibold leading-snug">{venue}</h2>
+            <p className="mt-0.5 truncate text-sm capitalize text-muted">
+              {[best.area, best.sport, best.format].filter(Boolean).join(" · ")}
+            </p>
+            <p className="mt-3 text-xs font-medium uppercase tracking-wide text-muted">
+              Free to book
+            </p>
+            <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-lg font-semibold tabular-nums">
+              {w.from} → {w.to}
+              <span className="text-sm font-medium text-pitch">{dur(w.durationMin)} free</span>
+            </p>
+            <p className="mt-0.5 text-sm text-body">
+              {courts.length} {courts.length === 1 ? "court" : "courts"} · from AED {cheapest}/h
+            </p>
+          </button>
+          <div className="flex shrink-0 items-center">
+            <button
+              type="button"
+              onClick={() => toggle(venue)}
+              aria-label={fav ? `Remove ${venue} from saved` : `Save ${venue}`}
+              aria-pressed={fav}
+              className={`grid size-11 cursor-pointer place-items-center rounded-full hover:bg-chip ${
+                fav ? "text-ink" : "text-muted"
+              }`}
+            >
+              <StarIcon filled={fav} />
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleOpen(venue)}
+              aria-label={open ? "Hide times" : "Show all times"}
+              className="grid size-11 cursor-pointer place-items-center rounded-full text-ink hover:bg-chip"
+            >
+              <Chevron open={open} />
+            </button>
+          </div>
+        </div>
+
+        {open && (
+          <div className="border-t border-line px-4 pb-4">
+            {courts.map((c) => (
+              <div key={c.court} className="border-b border-line py-3 last:border-b-0">
+                <p className="text-sm font-medium">
+                  {c.court}
+                  <span className="font-normal text-muted">
+                    {c.setting ? ` · ${c.setting}` : ""}
+                  </span>
+                </p>
+                {c.fit.map((fw) => (
+                  <p key={fw.from} className="mt-1 flex items-baseline justify-between gap-3 tabular-nums">
+                    <span className="text-base font-semibold">
+                      {fw.from} → {fw.to}
+                      <span className="ml-2 text-sm font-medium text-pitch">{dur(fw.durationMin)}</span>
+                    </span>
+                    <span className="shrink-0 text-sm text-body">
+                      AED {fw.pricePerHourAed}/h
+                    </span>
+                  </p>
+                ))}
+                <WindowBar windows={c.fit} from={timeFrom} />
+              </div>
+            ))}
+            <p className="pt-1 text-xs text-muted">
+              Start any time inside a green stretch; book up to its end time.
+            </p>
+            <a
+              href={best.bookingUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 flex h-11 items-center justify-center rounded-full bg-ink text-sm font-medium text-white"
+            >
+              Book on Playo
+            </a>
+          </div>
+        )}
+      </li>
+    );
+  };
 
   return (
     <div className="flex-1">
@@ -480,7 +607,18 @@ export default function Home() {
       <main className="mx-auto max-w-5xl px-4 pb-16 pt-4 sm:px-6">
         {!loading && !error && data && (
           <p className="mb-3 text-sm text-body">
-            <span className="font-semibold text-ink">{grouped.length}</span> venues free for {dur(need)}+ after {timeFrom}
+            {favoritesOnly ? (
+              <>
+                <span className="font-semibold text-ink">{grouped.length}</span> of {grouped.length + unavailableFavs.length} saved free for {dur(need)}+ after {timeFrom} ·{" "}
+                <button type="button" onClick={() => setFavoritesOnly(false)} className="cursor-pointer font-medium text-ink underline underline-offset-4">
+                  See all venues
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="font-semibold text-ink">{grouped.length}</span> venues free for {dur(need)}+ after {timeFrom}
+              </>
+            )}
           </p>
         )}
 
@@ -506,106 +644,51 @@ export default function Home() {
           </ul>
         )}
 
-        {!loading && !error && loaded && data && grouped.length === 0 && (
+        {!loading && !error && loaded && data && grouped.length === 0 && unavailableFavs.length === 0 && (
           <div className="rounded-xl bg-white p-8 text-center shadow-card">
             <p className="font-semibold">Nothing free for {dur(need)} after {timeFrom}</p>
-            <p className="mt-1 text-sm text-body">Try a shorter booking, an earlier time or another day.</p>
+            <p className="mt-1 text-sm text-body">
+              {favoritesOnly ? "No saved venues yet. Tap ★ above to see all venues, then star the ones you like." : "Try a shorter booking, an earlier time or another day."}
+            </p>
           </div>
         )}
 
         {!loading && !error && (
           <ul className="grid items-start gap-3 lg:grid-cols-2">
-            {grouped.slice(0, visibleCount).map(({ venue, courts, best, cheapest }) => {
-              const open = expanded.has(venue);
-              const w = best.longest;
-              const fav = isFavorite(venue);
-              return (
-                <li key={venue} className="overflow-hidden rounded-xl bg-white shadow-card">
-                  <div className="flex items-start gap-2 p-4">
-                    <button
-                      type="button"
-                      onClick={() => toggleOpen(venue)}
-                      aria-expanded={open}
-                      className="min-w-0 flex-1 cursor-pointer text-left"
-                    >
-                      <h2 className="truncate text-base font-semibold leading-snug">{venue}</h2>
-                      <p className="mt-0.5 truncate text-sm capitalize text-muted">
-                        {[best.area, best.sport, best.format].filter(Boolean).join(" · ")}
-                      </p>
-                      <p className="mt-3 text-xs font-medium uppercase tracking-wide text-muted">
-                        Free to book
-                      </p>
-                      <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-lg font-semibold tabular-nums">
-                        {w.from} → {w.to}
-                        <span className="text-sm font-medium text-pitch">{dur(w.durationMin)} free</span>
-                      </p>
-                      <p className="mt-0.5 text-sm text-body">
-                        {courts.length} {courts.length === 1 ? "court" : "courts"} · from AED {cheapest}/h
-                      </p>
-                    </button>
-                    <div className="flex shrink-0 items-center">
-                      <button
-                        type="button"
-                        onClick={() => toggle(venue)}
-                        aria-label={fav ? `Remove ${venue} from saved` : `Save ${venue}`}
-                        aria-pressed={fav}
-                        className={`grid size-11 cursor-pointer place-items-center rounded-full hover:bg-chip ${
-                          fav ? "text-ink" : "text-muted"
-                        }`}
-                      >
-                        <StarIcon filled={fav} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleOpen(venue)}
-                        aria-label={open ? "Hide times" : "Show all times"}
-                        className="grid size-11 cursor-pointer place-items-center rounded-full text-ink hover:bg-chip"
-                      >
-                        <Chevron open={open} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {open && (
-                    <div className="border-t border-line px-4 pb-4">
-                      {courts.map((c) => (
-                        <div key={c.court} className="border-b border-line py-3 last:border-b-0">
-                          <p className="text-sm font-medium">
-                            {c.court}
-                            <span className="font-normal text-muted">
-                              {c.setting ? ` · ${c.setting}` : ""}
-                            </span>
-                          </p>
-                          {c.fit.map((fw) => (
-                            <p key={fw.from} className="mt-1 flex items-baseline justify-between gap-3 tabular-nums">
-                              <span className="text-base font-semibold">
-                                {fw.from} → {fw.to}
-                                <span className="ml-2 text-sm font-medium text-pitch">{dur(fw.durationMin)}</span>
-                              </span>
-                              <span className="shrink-0 text-sm text-body">
-                                AED {fw.pricePerHourAed}/h
-                              </span>
-                            </p>
-                          ))}
-                          <WindowBar windows={c.fit} from={timeFrom} />
-                        </div>
-                      ))}
-                      <p className="pt-1 text-xs text-muted">
-                        Start any time inside a green stretch; book up to its end time.
-                      </p>
-                      <a
-                        href={best.bookingUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-4 flex h-11 items-center justify-center rounded-full bg-ink text-sm font-medium text-white"
-                      >
-                        Book on Playo
+            {grouped.slice(0, favCount).map(card)}
+            {unavailableFavs.map((f) => (
+              <li key={f.name} className="overflow-hidden rounded-xl bg-white shadow-card">
+                <div className="flex items-start gap-2 p-4">
+                  <div className="min-w-0 flex-1">
+                    <h2 className="truncate text-base font-semibold leading-snug text-body">{f.name}</h2>
+                    {f.area && <p className="mt-0.5 truncate text-sm text-muted">{f.area}</p>}
+                    <p className="mt-3 inline-flex h-6 items-center rounded-full bg-chip px-2.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                      Unavailable
+                    </p>
+                    <p className="mt-1.5 text-sm text-body">
+                      {f.shorter
+                        ? <>No {dur(need)} slot after {timeFrom}. Only <span className="whitespace-nowrap font-semibold tabular-nums text-ink">{f.shorter.from} → {f.shorter.to}</span> ({dur(f.shorter.durationMin)}).</>
+                        : <>Nothing free after {timeFrom} this day.</>}
+                    </p>
+                    {f.link && (
+                      <a href={f.link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-ink underline underline-offset-4">
+                        Open on Playo
                       </a>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggle(f.name)}
+                    aria-label={`Remove ${f.name} from saved`}
+                    aria-pressed={true}
+                    className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-full text-ink hover:bg-chip"
+                  >
+                    <StarIcon filled />
+                  </button>
+                </div>
+              </li>
+            ))}
+            {grouped.slice(favCount, Math.max(visibleCount, favCount)).map(card)}
           </ul>
         )}
 
