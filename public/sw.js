@@ -1,4 +1,4 @@
-const CACHE = "playo-slots-shell-v2";
+const CACHE = "playo-slots-shell-v3";
 const SHELL_ASSETS = ["/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -21,6 +21,9 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET") return;
+  // Only handle our own origin; map tiles and venue photos go straight to the network
+  // (they have their own HTTP caching) so this cache can't grow without bound.
+  if (url.origin !== self.location.origin) return;
 
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));

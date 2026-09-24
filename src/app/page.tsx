@@ -109,6 +109,27 @@ function WindowBar({ windows, from }: { windows: FreeWindow[]; from: string }) {
   );
 }
 
+/** Folded map (Lucide-style line icon, matches the star/chevron stroke). */
+function MapIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 4 3.6 6.2a1 1 0 0 0-.6.9v12.4a.5.5 0 0 0 .7.5L9 18l6 2 5.4-2.2a1 1 0 0 0 .6-.9V4.5a.5.5 0 0 0-.7-.5L15 6z" />
+      <path d="M9 4v14M15 6v14" />
+    </svg>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <path d="M9 6h11M9 12h11M9 18h11" />
+      <circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg viewBox="0 0 24 24" className="size-5" aria-hidden="true">
@@ -925,8 +946,8 @@ export default function Home() {
             view === "map" && selected ? "hidden md:flex md:left-[calc(50%+200px)]" : "left-1/2 flex"
           }`}
         >
+          {view === "list" ? <MapIcon /> : <ListIcon />}
           {view === "list" ? "Map" : "List"}
-          <span aria-hidden="true">{view === "list" ? "🗺" : "☰"}</span>
         </button>
       )}
     </div>
