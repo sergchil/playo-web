@@ -241,6 +241,14 @@ export default function Home() {
   const [selected, setSelected] = useState<string | null>(null);
   // Last venue you picked (map or list). Survives closing the sheet, so the list can highlight it.
   const [highlight, setHighlight] = useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const on = () => setIsDesktop(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<FindSlotsResult | null>(null);
@@ -402,7 +410,8 @@ export default function Home() {
     if (view !== "list" || !highlight) return;
     const idx = grouped.findIndex((g) => g.venue === highlight);
     if (idx >= visibleCount) setVisibleCount(Math.ceil((idx + 1) / PAGE_SIZE) * PAGE_SIZE);
-    if (idx >= 0) setExpanded((prev) => new Set(prev).add(highlight));
+    // Only the picked venue open, so it is the one that catches the eye.
+    if (idx >= 0) setExpanded(new Set([highlight]));
     const t = setTimeout(() => {
       document
         .querySelector(`[data-venue="${CSS.escape(highlight)}"]`)
@@ -954,7 +963,7 @@ export default function Home() {
 
       {view === "map" && (
         <div className="fixed inset-x-0 bottom-0 z-10 bg-canvas" style={{ top: spacerH }}>
-          <VenueMap venues={mapVenues} selected={selected} onSelect={selectVenue} />
+          <VenueMap venues={mapVenues} selected={selected ?? highlight} onSelect={selectVenue} />
           {loading && (
             <p className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold shadow-card">
               Checking pitches…
@@ -978,8 +987,11 @@ export default function Home() {
             setSelected(view === "list" && highlight && venueInfo[highlight] ? highlight : null);
             setView((v) => (v === "list" ? "map" : "list"));
           }}
+          style={view === "map" && selected && !isDesktop ? { top: spacerH + 12, bottom: "auto" } : undefined}
           className={`fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-30 h-11 -translate-x-1/2 cursor-pointer items-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-white shadow-[0_6px_20px_rgba(0,0,0,0.3)] ${
-            view === "map" && selected ? "hidden md:flex md:left-[calc(50%+200px)]" : "left-1/2 flex"
+            view === "map" && selected
+              ? "flex max-md:left-3 max-md:h-10 max-md:translate-x-0 max-md:px-4 md:left-[calc(50%+200px)]"
+              : "left-1/2 flex"
           }`}
         >
           {view === "list" ? <MapIcon /> : <ListIcon />}
