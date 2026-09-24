@@ -45,6 +45,25 @@ input[type="search"]::-webkit-search-cancel-button {
   appearance: none;
 }
 
+/* Loading: shimmer sweep over grey placeholder bars. */
+.shimmer {
+  background: linear-gradient(90deg, #ececec 0%, #ececec 30%, #f7f7f7 50%, #ececec 70%, #ececec 100%);
+  background-size: 300% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+/* Thin indeterminate bar under the filter header while refreshing. */
+.loadbar {
+  animation: loadbar 1.1s ease-in-out infinite;
+}
+@keyframes loadbar {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

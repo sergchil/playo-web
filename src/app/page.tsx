@@ -159,6 +159,22 @@ function Segmented<T extends string | number>({
   );
 }
 
+/** Placeholder shaped like a collapsed venue card: name, meta, label, time range, price. */
+function SkeletonCard() {
+  return (
+    <li className="flex items-start gap-3 rounded-xl bg-white p-4 shadow-card" aria-hidden="true">
+      <div className="min-w-0 flex-1">
+        <div className="shimmer h-4 w-3/5 rounded-full" />
+        <div className="shimmer mt-2 h-3 w-2/5 rounded-full" />
+        <div className="shimmer mt-4 h-2.5 w-20 rounded-full" />
+        <div className="shimmer mt-2 h-5 w-1/2 rounded-full" />
+        <div className="shimmer mt-2 h-3 w-1/3 rounded-full" />
+      </div>
+      <div className="shimmer size-6 shrink-0 rounded-full" />
+    </li>
+  );
+}
+
 function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" className="size-[18px]" aria-hidden="true">
@@ -191,7 +207,7 @@ export default function Home() {
   const [area, setArea] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(true);
   const [venueInfo, setVenueInfo] = useState<Record<string, { area?: string; url?: string; bookingUrl?: string }>>({});
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<FindSlotsResult | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -602,6 +618,11 @@ export default function Home() {
             </div>
           </div>
         </div>
+        {loading && (
+          <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden" aria-hidden="true">
+            <div className="loadbar h-full w-2/5 bg-pitch" />
+          </div>
+        )}
       </header>
 
       <main className="mx-auto max-w-5xl px-4 pb-16 pt-4 sm:px-6">
@@ -637,11 +658,16 @@ export default function Home() {
         )}
 
         {loading && (
-          <ul className="grid gap-3 lg:grid-cols-2" aria-busy="true" aria-label="Loading pitches">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <li key={i} className="h-[92px] animate-pulse rounded-xl bg-white shadow-card" />
-            ))}
-          </ul>
+          <>
+            <p className="mb-3 text-sm text-body" role="status">
+              Checking pitches on Playo…
+            </p>
+            <ul className="grid gap-3 lg:grid-cols-2" aria-busy="true" aria-label="Loading pitches">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </ul>
+          </>
         )}
 
         {!loading && !error && loaded && data && grouped.length === 0 && unavailableFavs.length === 0 && (
