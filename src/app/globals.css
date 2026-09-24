@@ -102,6 +102,20 @@ input[type="search"]::-webkit-search-cancel-button {
 .maplibregl-ctrl-attrib {
   font-size: 10px;
 }
+/* My-location button: round white pill like the rest of the UI. */
+.maplibregl-ctrl-top-right {
+  top: 12px;
+  right: 12px;
+}
+.maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate) {
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+.maplibregl-ctrl-group button.maplibregl-ctrl-geolocate {
+  width: 44px;
+  height: 44px;
+}
 
 /* Loading: shimmer sweep over grey placeholder bars. */
 .shimmer {

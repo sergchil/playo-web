@@ -95,7 +95,24 @@ export default function VenueMap({
       m.touchZoomRotate.disableRotation();
       m.on("click", () => onSelectRef.current(null));
       m.on("zoomend", () => setZoom(m.getZoom()));
-      m.on("load", () => setReady(true));
+      // "My location" button (blue dot + accuracy circle). Only asks permission when tapped;
+      // if already granted before, show the dot straight away.
+      const geo = new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showAccuracyCircle: true,
+        fitBoundsOptions: { maxZoom: 13 },
+      });
+      m.addControl(geo, "top-right");
+      m.on("load", () => {
+        setReady(true);
+        navigator.permissions
+          ?.query({ name: "geolocation" as PermissionName })
+          .then((p) => {
+            if (p.state === "granted") geo.trigger();
+          })
+          .catch(() => {});
+      });
       map.current = m;
     });
     return () => {
