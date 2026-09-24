@@ -15,15 +15,20 @@ function isoLocal(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function nextDays(n: number): { iso: string; dow: string; dom: string }[] {
-  const out = [];
-  const base = new Date();
-  for (let i = 0; i < n; i++) {
-    const d = new Date(base);
-    d.setDate(base.getDate() + i);
+type DayChip = { iso: string; dow: string; dom: string };
+
+/** fridaysOnly: the next 8 Fridays (~2 months). Otherwise every day for 14 days. */
+function dayChips(fridaysOnly: boolean): DayChip[] {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const out: DayChip[] = [];
+  for (let i = 0; out.length < (fridaysOnly ? 8 : 14); i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    if (fridaysOnly && d.getDay() !== 5) continue;
     out.push({
       iso: isoLocal(d),
-      dow: i === 0 ? "Today" : i === 1 ? "Tmrw" : d.toLocaleDateString("en-US", { weekday: "short" }),
+      dow: fridaysOnly ? "Fri" : i === 0 ? "Today" : i === 1 ? "Tmrw" : d.toLocaleDateString("en-US", { weekday: "short" }),
       dom: `${d.getDate()} ${d.toLocaleDateString("en-US", { month: "short" })}`,
     });
   }
@@ -107,8 +112,16 @@ function DurationBadge({ mins }: { mins: number }) {
 }
 
 export default function Home() {
-  const days = useMemo(() => nextDays(14), []);
+  const [fridaysOnly, setFridaysOnly] = useState(true);
+  const days = useMemo(() => dayChips(fridaysOnly), [fridaysOnly]);
   const [date, setDate] = useState(upcomingFriday);
+
+  const toggleFridays = () => {
+    const next = !fridaysOnly;
+    setFridaysOnly(next);
+    // Going back to Fridays-only while a non-Friday is picked: snap to the next Friday.
+    if (next && !dayChips(true).some((d) => d.iso === date)) setDate(upcomingFriday());
+  };
   const [sport, setSport] = useState<Sport>("both");
   const [timeFrom, setTimeFrom] = useState("20:00");
   const [area, setArea] = useState("");
@@ -188,7 +201,18 @@ export default function Home() {
           show through translucent in-app browser chrome (iOS 26 / Telegram). */}
       <div className="sticky top-0 z-20 border-b border-line bg-white pt-[env(safe-area-inset-top)] before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-screen before:bg-white before:content-['']">
         <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-3 sm:px-6">
-          <div className="rail rail-fade -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+          <div className="flex items-stretch gap-2">
+          <button
+            type="button"
+            onClick={toggleFridays}
+            aria-pressed={!fridaysOnly}
+            aria-label={fridaysOnly ? "Show all days" : "Show Fridays only"}
+            className="flex h-14 w-16 shrink-0 cursor-pointer flex-col items-center justify-center rounded-2xl border border-ink/15 text-ink transition-colors hover:bg-chip"
+          >
+            <span className="text-xs text-muted">{fridaysOnly ? "Fridays" : "All days"}</span>
+            <span className="text-sm font-semibold">{fridaysOnly ? "All →" : "Fri →"}</span>
+          </button>
+          <div className="rail rail-fade -mr-4 flex min-w-0 flex-1 gap-2 overflow-x-auto pr-4 sm:mr-0 sm:pr-0">
             {days.map((d) => {
               const active = d.iso === date;
               return (
@@ -206,6 +230,7 @@ export default function Home() {
                 </button>
               );
             })}
+          </div>
           </div>
 
           <div className="rail -mx-4 flex items-center gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
