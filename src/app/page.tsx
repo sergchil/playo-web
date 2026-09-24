@@ -239,6 +239,8 @@ export default function Home() {
   const [venueInfo, setVenueInfo] = useState<Record<string, VenueInfo>>({});
   const [view, setView] = useState<"list" | "map">("list");
   const [selected, setSelected] = useState<string | null>(null);
+  // Last venue you picked (map or list). Survives closing the sheet, so the list can highlight it.
+  const [highlight, setHighlight] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<FindSlotsResult | null>(null);
@@ -388,9 +390,28 @@ export default function Home() {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(venue)) next.delete(venue);
-      else next.add(venue);
+      else {
+        next.add(venue);
+        setHighlight(venue);
+      }
       return next;
     });
+
+  // Back from the map with a venue picked: make sure its card is rendered, open it, and scroll it into view.
+  useEffect(() => {
+    if (view !== "list" || !highlight) return;
+    const idx = grouped.findIndex((g) => g.venue === highlight);
+    if (idx >= visibleCount) setVisibleCount(Math.ceil((idx + 1) / PAGE_SIZE) * PAGE_SIZE);
+    if (idx >= 0) setExpanded((prev) => new Set(prev).add(highlight));
+    const t = setTimeout(() => {
+      document
+        .querySelector(`[data-venue="${CSS.escape(highlight)}"]`)
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 80);
+    return () => clearTimeout(t);
+    // Only when switching back to the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   const summary = [
     (() => {
@@ -408,7 +429,13 @@ export default function Home() {
     const w = best.longest;
     const fav = isFavorite(venue);
     return (
-      <li key={venue} className="overflow-hidden rounded-xl bg-white shadow-card">
+      <li
+        key={venue}
+        data-venue={venue}
+        className={`scroll-mt-40 overflow-hidden rounded-xl bg-white shadow-card transition-shadow ${
+          highlight === venue ? "ring-2 ring-ink" : ""
+        }`}
+      >
         <div className="flex items-start gap-2 p-4">
           <button
             type="button"
@@ -531,6 +558,7 @@ export default function Home() {
 
   const selectVenue = useCallback((name: string | null) => {
     setSelected(name);
+    if (name) setHighlight(name);
     if (name) setExpanded((prev) => new Set(prev).add(name));
   }, []);
 
@@ -651,7 +679,13 @@ export default function Home() {
   };
 
   const unavailCard = (f: (typeof unavailableFavs)[number]) => (
-    <li key={f.name} className="overflow-hidden rounded-xl bg-white shadow-card">
+    <li
+      key={f.name}
+      data-venue={f.name}
+      className={`overflow-hidden rounded-xl bg-white shadow-card transition-shadow ${
+        highlight === f.name ? "ring-2 ring-ink" : ""
+      }`}
+    >
       <div className="flex items-start gap-2 p-4">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold leading-snug text-body">{f.name}</h2>
@@ -939,7 +973,9 @@ export default function Home() {
         <button
           type="button"
           onClick={() => {
-            setSelected(null);
+            // List → map: open the venue you last picked (panel + centred marker). Map → list: close the panel;
+            // the list then scrolls to and outlines that venue.
+            setSelected(view === "list" && highlight && venueInfo[highlight] ? highlight : null);
             setView((v) => (v === "list" ? "map" : "list"));
           }}
           className={`fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-30 h-11 -translate-x-1/2 cursor-pointer items-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-white shadow-[0_6px_20px_rgba(0,0,0,0.3)] ${

@@ -145,19 +145,25 @@ export default function VenueMap({
       });
   }, [venues, selected, ready, zoom]);
 
-  // Keep the tapped venue visible above the bottom sheet.
+  // Keep the selected venue visible beside the details panel. Also runs once the map finishes
+  // loading, so a venue picked in the list is centred when you switch to the map.
+  const venuesRef = useRef(venues);
+  useEffect(() => {
+    venuesRef.current = venues;
+  }, [venues]);
   useEffect(() => {
     const m = map.current;
-    const v = venues.find((x) => x.name === selected);
-    if (!m || !v) return;
+    const v = venuesRef.current.find((x) => x.name === selected);
+    if (!m || !ready || !v) return;
     // Mobile: lift above the bottom sheet. Desktop: shift right of the 400px side panel.
     const desktop = window.matchMedia("(min-width: 768px)").matches;
     m.easeTo({
       center: [v.lng, v.lat],
+      zoom: Math.max(m.getZoom(), 13),
       offset: desktop ? [200, 0] : [0, -Math.round(window.innerHeight * 0.25)],
-      duration: 350,
+      duration: 450,
     });
-  }, [selected, venues]);
+  }, [selected, ready]);
 
   return <div ref={el} className="h-full w-full" />;
 }

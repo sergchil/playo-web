@@ -124,7 +124,7 @@ export default function PlacePanel({
             onClose();
           }}
           aria-label="Close details"
-          className="absolute right-2 top-1 grid size-9 cursor-pointer place-items-center rounded-full text-muted hover:bg-chip"
+          className="absolute right-2 top-1 z-10 grid size-9 cursor-pointer place-items-center rounded-full bg-white/90 text-ink shadow-card hover:bg-white"
         >
           <CloseIcon />
         </button>
