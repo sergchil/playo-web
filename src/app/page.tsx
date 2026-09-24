@@ -2,8 +2,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FindSlotsResult, FreeWindow, SlotResult } from "@/lib/findSlots";
 import { useFavorites } from "@/lib/useFavorites";
+import dynamic from "next/dynamic";
+import type { MapVenue } from "./VenueMap";
+
+const VenueMap = dynamic(() => import("./VenueMap"), {
+  ssr: false,
+  loading: () => <div className="shimmer h-full w-full" />,
+});
 
 type Sport = "both" | "football" | "futsal";
+type VenueInfo = { name: string; area?: string; url?: string; bookingUrl?: string; lat?: number; lng?: number; sports?: string[] };
 
 const PAGE_SIZE = 16;
 const HOURS = Array.from({ length: 18 }, (_, i) => `${String(i + 6).padStart(2, "0")}:00`);
@@ -206,7 +214,9 @@ export default function Home() {
   const [need, setNeed] = useState<Need>(120);
   const [area, setArea] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(true);
-  const [venueInfo, setVenueInfo] = useState<Record<string, { area?: string; url?: string; bookingUrl?: string }>>({});
+  const [venueInfo, setVenueInfo] = useState<Record<string, VenueInfo>>({});
+  const [view, setView] = useState<"list" | "map">("list");
+  const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<FindSlotsResult | null>(null);
@@ -284,7 +294,7 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/venues?sport=both")
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { venues?: { name: string; area?: string; url?: string; bookingUrl?: string }[] } | null) => {
+      .then((j: { venues?: VenueInfo[] } | null) => {
         if (!j?.venues) return;
         setVenueInfo(Object.fromEntries(j.venues.map((v) => [v.name, v])));
       })
@@ -462,6 +472,65 @@ export default function Home() {
       </li>
     );
   };
+
+  // Map markers: every known venue matching sport/search/saved; coloured by availability.
+  const mapVenues = useMemo<MapVenue[]>(() => {
+    const q = area.trim().toLowerCase();
+    const free = new Map(grouped.map((g) => [g.venue, g]));
+    return Object.values(venueInfo)
+      .filter((v) => typeof v.lat === "number" && typeof v.lng === "number")
+      .filter((v) => sport === "both" || (v.sports ?? []).includes(sport))
+      .filter((v) => !favoritesOnly || favorites.includes(v.name))
+      .filter((v) => !q || `${v.area ?? ""} ${v.name}`.toLowerCase().includes(q))
+      .map((v) => {
+        const g = free.get(v.name);
+        return {
+          name: v.name,
+          lat: v.lat!,
+          lng: v.lng!,
+          tone: g ? (isFavorite(v.name) ? "fav" : "free") : "none",
+          label: g ? `${g.best.longest.from} · ${dur(g.best.longest.durationMin)}` : isFavorite(v.name) ? "" : undefined,
+        } as MapVenue;
+      });
+  }, [venueInfo, grouped, sport, favoritesOnly, favorites, isFavorite, area]);
+
+  const selectVenue = useCallback((name: string | null) => {
+    setSelected(name);
+    if (name) setExpanded((prev) => new Set(prev).add(name));
+  }, []);
+
+  const unavailCard = (f: (typeof unavailableFavs)[number]) => (
+    <li key={f.name} className="overflow-hidden rounded-xl bg-white shadow-card">
+      <div className="flex items-start gap-2 p-4">
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-base font-semibold leading-snug text-body">{f.name}</h2>
+          {f.area && <p className="mt-0.5 truncate text-sm text-muted">{f.area}</p>}
+          <p className="mt-3 inline-flex h-6 items-center rounded-full bg-chip px-2.5 text-xs font-semibold uppercase tracking-wide text-muted">
+            Unavailable
+          </p>
+          <p className="mt-1.5 text-sm text-body">
+            {f.shorter
+              ? <>No {dur(need)} slot after {timeFrom}. Only <span className="whitespace-nowrap font-semibold tabular-nums text-ink">{f.shorter.from} → {f.shorter.to}</span> ({dur(f.shorter.durationMin)}).</>
+              : <>Nothing free after {timeFrom} this day.</>}
+          </p>
+          {f.link && (
+            <a href={f.link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-ink underline underline-offset-4">
+              Open on Playo
+            </a>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => toggle(f.name)}
+          aria-label={`Remove ${f.name} from saved`}
+          aria-pressed={true}
+          className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-full text-ink hover:bg-chip"
+        >
+          <StarIcon filled />
+        </button>
+      </div>
+    </li>
+  );
 
   return (
     <div className="flex-1">
@@ -682,38 +751,7 @@ export default function Home() {
         {!loading && !error && (
           <ul className="grid items-start gap-3 lg:grid-cols-2">
             {grouped.slice(0, favCount).map(card)}
-            {unavailableFavs.map((f) => (
-              <li key={f.name} className="overflow-hidden rounded-xl bg-white shadow-card">
-                <div className="flex items-start gap-2 p-4">
-                  <div className="min-w-0 flex-1">
-                    <h2 className="truncate text-base font-semibold leading-snug text-body">{f.name}</h2>
-                    {f.area && <p className="mt-0.5 truncate text-sm text-muted">{f.area}</p>}
-                    <p className="mt-3 inline-flex h-6 items-center rounded-full bg-chip px-2.5 text-xs font-semibold uppercase tracking-wide text-muted">
-                      Unavailable
-                    </p>
-                    <p className="mt-1.5 text-sm text-body">
-                      {f.shorter
-                        ? <>No {dur(need)} slot after {timeFrom}. Only <span className="whitespace-nowrap font-semibold tabular-nums text-ink">{f.shorter.from} → {f.shorter.to}</span> ({dur(f.shorter.durationMin)}).</>
-                        : <>Nothing free after {timeFrom} this day.</>}
-                    </p>
-                    {f.link && (
-                      <a href={f.link} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-ink underline underline-offset-4">
-                        Open on Playo
-                      </a>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggle(f.name)}
-                    aria-label={`Remove ${f.name} from saved`}
-                    aria-pressed={true}
-                    className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-full text-ink hover:bg-chip"
-                  >
-                    <StarIcon filled />
-                  </button>
-                </div>
-              </li>
-            ))}
+            {unavailableFavs.map(unavailCard)}
             {grouped.slice(favCount, Math.max(visibleCount, favCount)).map(card)}
           </ul>
         )}
@@ -728,6 +766,73 @@ export default function Home() {
           </button>
         )}
       </main>
+
+      {view === "map" && (
+        <div className="fixed inset-x-0 bottom-0 z-10 bg-canvas" style={{ top: spacerH }}>
+          <VenueMap venues={mapVenues} selected={selected} onSelect={selectVenue} />
+          {loading && (
+            <p className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold shadow-card">
+              Checking pitches…
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Bottom sheet with the tapped venue's details. */}
+      {view === "map" && selected && (
+        <div className="fixed inset-x-0 bottom-0 z-30 mx-auto max-h-[70vh] max-w-xl overflow-y-auto rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_rgba(0,0,0,0.18)]">
+          <div className="sticky top-0 z-10 flex items-center justify-center bg-white pt-2">
+            <span className="h-1 w-10 rounded-full bg-chip-hover" />
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              aria-label="Close"
+              className="absolute right-2 top-1 grid size-9 cursor-pointer place-items-center rounded-full text-lg text-muted hover:bg-chip"
+            >
+              ✕
+            </button>
+          </div>
+          <ul className="[&>li]:rounded-none [&>li]:shadow-none">
+            {(() => {
+              const g = grouped.find((x) => x.venue === selected);
+              if (g) return card(g);
+              const f = unavailableFavs.find((x) => x.name === selected);
+              if (f) return unavailCard(f);
+              const v = venueInfo[selected];
+              return (
+                <li className="p-4">
+                  <h2 className="text-base font-semibold">{selected}</h2>
+                  {v?.area && <p className="mt-0.5 text-sm text-muted">{v.area}</p>}
+                  <p className="mt-3 inline-flex h-6 items-center rounded-full bg-chip px-2.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                    Unavailable
+                  </p>
+                  <p className="mt-1.5 text-sm text-body">Nothing free for {dur(need)} after {timeFrom} this day.</p>
+                  {(v?.bookingUrl ?? v?.url) && (
+                    <a href={v?.bookingUrl ?? v?.url} target="_blank" rel="noreferrer" className="mt-4 flex h-11 items-center justify-center rounded-full bg-chip text-sm font-medium">
+                      Open on Playo
+                    </a>
+                  )}
+                </li>
+              );
+            })()}
+          </ul>
+        </div>
+      )}
+
+      {/* List / Map switch (Airbnb-style floating pill). */}
+      {!(view === "map" && selected) && (
+        <button
+          type="button"
+          onClick={() => {
+            setSelected(null);
+            setView((v) => (v === "list" ? "map" : "list"));
+          }}
+          className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 z-30 flex h-11 -translate-x-1/2 cursor-pointer items-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-white shadow-[0_6px_20px_rgba(0,0,0,0.3)]"
+        >
+          {view === "list" ? "Map" : "List"}
+          <span aria-hidden="true">{view === "list" ? "🗺" : "☰"}</span>
+        </button>
+      )}
     </div>
   );
 }

@@ -45,6 +45,64 @@ input[type="search"]::-webkit-search-cancel-button {
   appearance: none;
 }
 
+/* Map markers: mono pills, green dot = free, black ★ = saved + free, grey dot = nothing free. */
+.pm-wrap {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.pm {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px 0 7px;
+  border-radius: 999px;
+  background: #fff;
+  color: #000;
+  font: 600 12px/1 var(--font-dm-sans), system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: transform 0.12s ease;
+}
+.pm-compact {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  justify-content: center;
+}
+.pm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-pitch);
+}
+.pm-fav {
+  background: #000;
+  color: #fff;
+}
+.pm-star {
+  font-size: 11px;
+}
+.pm-none {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  background: #b8b8b8;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.pm-sel {
+  transform: scale(1.18);
+  outline: 2px solid #000;
+  outline-offset: 2px;
+}
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+}
+
 /* Loading: shimmer sweep over grey placeholder bars. */
 .shimmer {
   background: linear-gradient(90deg, #ececec 0%, #ececec 30%, #f7f7f7 50%, #ececec 70%, #ececec 100%);
