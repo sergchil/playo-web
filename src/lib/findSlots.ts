@@ -29,14 +29,24 @@ function hhmm(totalMins: number): string {
 export interface BookableStart {
   start: string;
   end: string;
+  durationMin: number;
   priceAed: number;
   pricePerHourAed: number;
 }
 
-function bookableStarts(
+/** We only ever book 1–2 hours; never report a longer block than this even if more is free. */
+const REPORT_CAP_MIN = 120;
+/** Below this, it's "only 30 minutes" — not worth showing. */
+const MIN_USEFUL_MIN = 60;
+
+/**
+ * For each valid start time, find the MAXIMUM continuous duration bookable
+ * from there (respecting the court's minSlots/maxSlots), capped at 2h.
+ * Starts that can't reach at least 1 hour are dropped entirely.
+ */
+function bookableWindows(
   court: CourtInfo,
   slotLen: number,
-  wantLen: number,
   date: string,
   tFrom: number,
   tTo: number | null
@@ -53,27 +63,34 @@ function bookableStarts(
   if (date === todayStr) {
     earliest = now.getHours() * 60 + now.getMinutes() + (court.bookingTimeBuffer || 0);
   }
-  const n0 = Math.max(1, Math.ceil(wantLen / slotLen));
   const minN = court.slotConfig?.minSlots ?? 1;
   const maxN = court.slotConfig?.maxSlots ?? 10000;
-  if (n0 > maxN) return [];
-  const n = Math.max(n0, minN);
-  const out: BookableStart[] = [];
+  const capN = Math.max(Math.floor(REPORT_CAP_MIN / slotLen), minN); // never cap below the venue's own minimum
   const starts = Array.from(free.keys()).sort((a, b) => a - b);
+  const startSet = new Set(starts);
+  const out: BookableStart[] = [];
   for (const start of starts) {
     if (start < tFrom || start < earliest) continue;
     if (tTo !== null && start > tTo) continue;
+    // Count consecutive free slots from this start.
+    let run = 0;
+    while (startSet.has(start + run * slotLen)) run++;
+    if (run < minN) continue; // can't even meet the venue's minimum booking length
+    const n = Math.min(run, maxN, capN);
+    const durationMin = n * slotLen;
+    if (durationMin < MIN_USEFUL_MIN) continue; // "only 30 minutes" — drop
     const parts = Array.from({ length: n }, (_, i) => start + i * slotLen);
-    if (parts.every((p) => free.has(p))) {
-      const total = parts.reduce((sum, p) => sum + (free.get(p) || 0), 0);
-      out.push({
-        start: hhmm(start),
-        end: hhmm(start + n * slotLen),
-        priceAed: Math.round(total * 100) / 100,
-        pricePerHourAed: Math.round(((total * 60) / (n * slotLen)) * 100) / 100,
-      });
-    }
+    const total = parts.reduce((sum, p) => sum + (free.get(p) || 0), 0);
+    out.push({
+      start: hhmm(start),
+      end: hhmm(start + durationMin),
+      durationMin,
+      priceAed: Math.round(total * 100) / 100,
+      pricePerHourAed: Math.round(((total * 60) / durationMin) * 100) / 100,
+    });
   }
+  // Longest bookable block first (2h, then 1.5h, then 1h), then earliest start.
+  out.sort((a, b) => b.durationMin - a.durationMin || a.start.localeCompare(b.start));
   return out;
 }
 
@@ -89,6 +106,7 @@ export interface SlotResult {
   settingSource: string;
   slotLengthMin: number;
   available: BookableStart[];
+  maxDurationMin: number;
   bookingUrl: string;
 }
 
@@ -97,8 +115,7 @@ async function venueSlots(
   sportId: string,
   date: string,
   tFrom: number,
-  tTo: number | null,
-  duration: number
+  tTo: number | null
 ): Promise<SlotResult[]> {
   let d: AvailabilityData;
   try {
@@ -112,7 +129,7 @@ async function venueSlots(
     const name = court.courtName.replace(/\s+/g, " ").trim();
     const fmt = parseFormat(name, sportId);
     const st = parseSetting(name);
-    const starts = bookableStarts(court, slotLen, duration, date, tFrom, tTo);
+    const starts = bookableWindows(court, slotLen, date, tFrom, tTo);
     if (!starts.length) continue;
     rows.push({
       venue: v.name,
@@ -126,6 +143,7 @@ async function venueSlots(
       settingSource: st.settingSource,
       slotLengthMin: slotLen,
       available: starts,
+      maxDurationMin: starts[0].durationMin,
       bookingUrl: v.bookingUrl,
     });
   }
@@ -137,7 +155,6 @@ export interface FindSlotsParams {
   sport: "futsal" | "football" | "both";
   timeFrom: string;
   timeTo?: string;
-  durationMinutes: number;
   area?: string;
 }
 
@@ -149,7 +166,7 @@ export interface FindSlotsResult {
 }
 
 export async function findSlots(params: FindSlotsParams): Promise<FindSlotsResult> {
-  const { date, sport, timeFrom, timeTo, durationMinutes, area } = params;
+  const { date, sport, timeFrom, timeTo, area } = params;
   const tFrom = mins(timeFrom);
   const tTo = timeTo ? mins(timeTo) : null;
   const sportIds = sport === "both" ? ["SP44", "SP2"] : [sport === "futsal" ? "SP44" : "SP2"];
@@ -161,11 +178,14 @@ export async function findSlots(params: FindSlotsParams): Promise<FindSlotsResul
     for (const v of venues) {
       if (area && !(v.area || "").toLowerCase().includes(area.toLowerCase())) continue;
       checked++;
-      jobs.push(venueSlots(v, sportId, date, tFrom, tTo, durationMinutes));
+      jobs.push(venueSlots(v, sportId, date, tFrom, tTo));
     }
   }
   const results = (await Promise.all(jobs)).flat();
+  // Courts that can host the longest continuous booking come first (2h, then 1.5h, then 1h),
+  // then earliest start time, then cheapest per hour.
   results.sort((a, b) => {
+    if (b.maxDurationMin !== a.maxDurationMin) return b.maxDurationMin - a.maxDurationMin;
     const t = a.available[0].start.localeCompare(b.available[0].start);
     if (t !== 0) return t;
     return a.available[0].pricePerHourAed - b.available[0].pricePerHourAed;

@@ -34,7 +34,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
-      const qs = new URLSearchParams({ date, sport, timeFrom, duration: "60" });
+      const qs = new URLSearchParams({ date, sport, timeFrom });
       if (area.trim()) qs.set("area", area.trim());
       const res = await fetch(`/api/slots?${qs.toString()}`);
       if (!res.ok) throw new Error(`Server error (${res.status})`);
@@ -70,14 +70,23 @@ export default function Home() {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(r);
     }
-    // favourites float to top
+    // Favourites float to top; within each tier, longest bookable duration
+    // (2h, then 1.5h, then 1h) wins, using each venue's best court.
     return Array.from(map.entries()).sort((a, b) => {
       const favA = isFavorite(a[0]) ? 0 : 1;
       const favB = isFavorite(b[0]) ? 0 : 1;
       if (favA !== favB) return favA - favB;
+      const bestA = Math.max(...a[1].map((c) => c.maxDurationMin));
+      const bestB = Math.max(...b[1].map((c) => c.maxDurationMin));
+      if (bestA !== bestB) return bestB - bestA;
       return a[0].localeCompare(b[0]);
     });
   }, [results, isFavorite]);
+
+  function durationLabel(mins: number): string {
+    if (mins % 60 === 0) return `${mins / 60}h`;
+    return `${Math.floor(mins / 60)}h${mins % 60}m`;
+  }
 
   return (
     <main className="flex-1 flex flex-col max-w-2xl w-full mx-auto px-4 pb-24 pt-4 sm:px-6">
@@ -163,8 +172,9 @@ export default function Home() {
         <ul className="flex flex-col gap-3">
           {grouped.slice(0, visibleCount).map(([venue, courts]) => {
             const isOpen = expanded.has(venue);
-            const earliestPerCourt = courts.map((c) => c.available[0]);
-            const cheapest = [...earliestPerCourt].sort((a, b) => a.pricePerHourAed - b.pricePerHourAed)[0];
+            const sortedCourts = [...courts].sort((a, b) => b.maxDurationMin - a.maxDurationMin);
+            const best = sortedCourts[0];
+            const bestSlot = best.available[0];
             return (
               <li key={venue} className="bg-slate-900 border border-slate-800 rounded-xl p-3">
                 <button
@@ -184,12 +194,24 @@ export default function Home() {
                       {!isOpen && (
                         <>
                           {" "}
-                          · from {cheapest.start} · AED {cheapest.pricePerHourAed}/hr
+                          · up to {durationLabel(best.maxDurationMin)} from {bestSlot.start} · AED{" "}
+                          {bestSlot.pricePerHourAed}/hr
                         </>
                       )}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${
+                        best.maxDurationMin >= 120
+                          ? "bg-emerald-900 text-emerald-300"
+                          : best.maxDurationMin >= 90
+                          ? "bg-sky-900 text-sky-300"
+                          : "bg-slate-800 text-slate-400"
+                      }`}
+                    >
+                      {durationLabel(best.maxDurationMin)}
+                    </span>
                     <span
                       role="button"
                       tabIndex={0}
@@ -214,7 +236,7 @@ export default function Home() {
 
                 {isOpen && (
                   <div className="flex flex-col gap-2 mt-2">
-                    {courts.map((c) => (
+                    {sortedCourts.map((c) => (
                       <div key={c.court} className="border-t border-slate-800 pt-2 first:border-t-0 first:pt-0">
                         <p className="text-xs text-slate-400 mb-1">
                           {c.court}
@@ -224,13 +246,13 @@ export default function Home() {
                         <div className="flex flex-wrap gap-1.5">
                           {c.available.map((slot) => (
                             <a
-                              key={slot.start}
+                              key={`${slot.start}-${slot.durationMin}`}
                               href={c.bookingUrl}
                               target="_blank"
                               rel="noreferrer"
                               className="text-xs bg-slate-800 hover:bg-slate-700 rounded-full px-2.5 py-1 text-slate-200"
                             >
-                              {slot.start} · AED {slot.priceAed}
+                              {slot.start}–{slot.end} ({durationLabel(slot.durationMin)}) · AED {slot.priceAed}
                             </a>
                           ))}
                         </div>

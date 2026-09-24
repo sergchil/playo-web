@@ -9,11 +9,10 @@ export async function GET(req: NextRequest) {
   const sport = (sp.get("sport") as "futsal" | "football" | "both") || "both";
   const timeFrom = sp.get("timeFrom") || "20:00";
   const timeTo = sp.get("timeTo") || undefined;
-  const durationMinutes = parseInt(sp.get("duration") || "60", 10);
   const area = sp.get("area") || undefined;
 
   try {
-    const result = await findSlots({ date, sport, timeFrom, timeTo, durationMinutes, area });
+    const result = await findSlots({ date, sport, timeFrom, timeTo, area });
     return NextResponse.json(result, {
       headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=120" },
     });
