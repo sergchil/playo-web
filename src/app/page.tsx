@@ -963,7 +963,7 @@ export default function Home() {
 
       {view === "map" && (
         <div className="fixed inset-x-0 bottom-0 z-10 bg-canvas" style={{ top: spacerH }}>
-          <VenueMap venues={mapVenues} selected={selected ?? highlight} onSelect={selectVenue} />
+          <VenueMap venues={mapVenues} selected={selected ?? highlight} panelOpen={!!selected} onSelect={selectVenue} />
           {loading && (
             <p className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold shadow-card">
               Checking pitches…
@@ -984,7 +984,9 @@ export default function Home() {
           onClick={() => {
             // List → map: open the venue you last picked (panel + centred marker). Map → list: close the panel;
             // the list then scrolls to and outlines that venue.
-            setSelected(view === "list" && highlight && venueInfo[highlight] ? highlight : null);
+            // Mobile: don't auto-open the sheet (you just saw the details in the list); the marker is still
+            // centred and outlined. Desktop keeps auto-opening the side panel.
+            setSelected(view === "list" && isDesktop && highlight && venueInfo[highlight] ? highlight : null);
             setView((v) => (v === "list" ? "map" : "list"));
           }}
           style={view === "map" && selected && !isDesktop ? { top: spacerH + 12, bottom: "auto" } : undefined}

@@ -63,10 +63,13 @@ function markerHtml(v: MapVenue, selected: boolean, showLabel: boolean) {
 export default function VenueMap({
   venues,
   selected,
+  panelOpen,
   onSelect,
 }: {
   venues: MapVenue[];
   selected: string | null;
+  /** Details panel is showing: offset the centre so the marker isn't hidden behind it. */
+  panelOpen: boolean;
   onSelect: (name: string | null) => void;
 }) {
   const el = useRef<HTMLDivElement>(null);
@@ -148,9 +151,11 @@ export default function VenueMap({
   // Keep the selected venue visible beside the details panel. Also runs once the map finishes
   // loading, so a venue picked in the list is centred when you switch to the map.
   const venuesRef = useRef(venues);
+  const panelRef = useRef(panelOpen);
   useEffect(() => {
     venuesRef.current = venues;
-  }, [venues]);
+    panelRef.current = panelOpen;
+  }, [venues, panelOpen]);
   useEffect(() => {
     const m = map.current;
     const v = venuesRef.current.find((x) => x.name === selected);
@@ -160,7 +165,7 @@ export default function VenueMap({
     m.easeTo({
       center: [v.lng, v.lat],
       zoom: Math.max(m.getZoom(), 13),
-      offset: desktop ? [200, 0] : [0, -Math.round(window.innerHeight * 0.25)],
+      offset: !panelRef.current ? [0, 0] : desktop ? [200, 0] : [0, -Math.round(window.innerHeight * 0.25)],
       duration: 450,
     });
   }, [selected, ready]);
