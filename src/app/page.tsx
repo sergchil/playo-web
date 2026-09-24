@@ -5,19 +5,110 @@ import { useFavorites } from "@/lib/useFavorites";
 
 type Sport = "both" | "football" | "futsal";
 
-function upcomingFridayLocal(): string {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = (5 - day + 7) % 7;
-  const target = new Date(now);
-  target.setDate(now.getDate() + diff);
-  return target.toISOString().slice(0, 10);
+const PAGE_SIZE = 16;
+const HOURS = Array.from({ length: 18 }, (_, i) => `${String(i + 6).padStart(2, "0")}:00`);
+
+function isoLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-const PAGE_SIZE = 15;
+function nextDays(n: number): { iso: string; dow: string; dom: string }[] {
+  const out = [];
+  const base = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    out.push({
+      iso: isoLocal(d),
+      dow: i === 0 ? "Today" : i === 1 ? "Tmrw" : d.toLocaleDateString("en-US", { weekday: "short" }),
+      dom: `${d.getDate()} ${d.toLocaleDateString("en-US", { month: "short" })}`,
+    });
+  }
+  return out;
+}
+
+function upcomingFriday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7));
+  return isoLocal(d);
+}
+
+function dur(mins: number): string {
+  return `${mins / 60}h`;
+}
+
+function Pill({
+  active,
+  onClick,
+  children,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={label}
+      className={`h-10 shrink-0 rounded-full px-4 text-sm font-medium transition-colors cursor-pointer ${
+        active ? "bg-ink text-white" : "bg-chip text-ink hover:bg-chip-hover"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden="true">
+      <path
+        d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={`size-4 transition-transform ${open ? "rotate-180" : ""}`}
+      aria-hidden="true"
+    >
+      <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function DurationBadge({ mins }: { mins: number }) {
+  const tone =
+    mins >= 120
+      ? "bg-pitch text-white"
+      : mins >= 90
+        ? "bg-pitch-soft text-pitch"
+        : "bg-chip text-body";
+  return (
+    <span className={`inline-flex h-7 items-center rounded-full px-2.5 text-sm font-semibold ${tone}`}>
+      {dur(mins)}
+    </span>
+  );
+}
 
 export default function Home() {
-  const [date, setDate] = useState(upcomingFridayLocal());
+  const days = useMemo(() => nextDays(14), []);
+  const [date, setDate] = useState(upcomingFriday);
   const [sport, setSport] = useState<Sport>("both");
   const [timeFrom, setTimeFrom] = useState("20:00");
   const [area, setArea] = useState("");
@@ -35,249 +126,295 @@ export default function Home() {
     setError(null);
     try {
       const qs = new URLSearchParams({ date, sport, timeFrom });
-      if (area.trim()) qs.set("area", area.trim());
       const res = await fetch(`/api/slots?${qs.toString()}`);
       if (!res.ok) throw new Error(`Server error (${res.status})`);
-      const json: FindSlotsResult = await res.json();
-      setData(json);
+      setData(await res.json());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [date, sport, timeFrom, area]);
+  }, [date, sport, timeFrom]);
 
   useEffect(() => {
     fetchSlots();
   }, [fetchSlots]);
 
-  // Reset pagination/expansion whenever the filters change.
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
     setExpanded(new Set());
   }, [date, sport, timeFrom, area, favoritesOnly]);
 
-  const results = useMemo(() => {
-    if (!data) return [];
-    if (!favoritesOnly) return data.results;
-    return data.results.filter((r) => favorites.includes(r.venue));
-  }, [data, favoritesOnly, favorites]);
-
   const grouped = useMemo(() => {
+    if (!data) return [];
+    const q = area.trim().toLowerCase();
     const map = new Map<string, SlotResult[]>();
-    for (const r of results) {
-      const key = r.venue;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(r);
+    for (const r of data.results) {
+      if (favoritesOnly && !favorites.includes(r.venue)) continue;
+      if (q && !`${r.area ?? ""} ${r.venue}`.toLowerCase().includes(q)) continue;
+      if (!map.has(r.venue)) map.set(r.venue, []);
+      map.get(r.venue)!.push(r);
     }
-    // Favourites float to top; within each tier, longest bookable duration
-    // (2h, then 1.5h, then 1h) wins, using each venue's best court.
-    return Array.from(map.entries()).sort((a, b) => {
-      const favA = isFavorite(a[0]) ? 0 : 1;
-      const favB = isFavorite(b[0]) ? 0 : 1;
-      if (favA !== favB) return favA - favB;
-      const bestA = Math.max(...a[1].map((c) => c.maxDurationMin));
-      const bestB = Math.max(...b[1].map((c) => c.maxDurationMin));
-      if (bestA !== bestB) return bestB - bestA;
-      return a[0].localeCompare(b[0]);
-    });
-  }, [results, isFavorite]);
+    return Array.from(map.entries())
+      .map(([venue, courts]) => {
+        const sorted = [...courts].sort(
+          (a, b) =>
+            b.maxDurationMin - a.maxDurationMin ||
+            a.available[0].start.localeCompare(b.available[0].start),
+        );
+        return { venue, courts: sorted, best: sorted[0] };
+      })
+      .sort((a, b) => {
+        const fav = Number(isFavorite(b.venue)) - Number(isFavorite(a.venue));
+        if (fav) return fav;
+        const d = b.best.maxDurationMin - a.best.maxDurationMin;
+        if (d) return d;
+        return a.best.available[0].start.localeCompare(b.best.available[0].start);
+      });
+  }, [data, area, favoritesOnly, favorites, isFavorite]);
 
-  function durationLabel(mins: number): string {
-    if (mins % 60 === 0) return `${mins / 60}h`;
-    return `${Math.floor(mins / 60)}h${mins % 60}m`;
-  }
+  const toggleOpen = (venue: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(venue)) next.delete(venue);
+      else next.add(venue);
+      return next;
+    });
 
   return (
-    <main className="flex-1 flex flex-col max-w-2xl w-full mx-auto px-4 pb-24 pt-4 sm:px-6">
-      <header className="mb-4">
-        <h1 className="text-xl font-semibold tracking-tight">⚽ Playo Slots — Dubai</h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Live availability & prices. No login, no booking here — tap through to Playo to book.
-        </p>
-      </header>
+    <div className="flex-1">
+      {/* Filters — the whole top of the app */}
+      <div className="sticky top-0 z-20 border-b border-line bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur-sm">
+        <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-3 sm:px-6">
+          <div className="rail rail-fade -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+            {days.map((d) => {
+              const active = d.iso === date;
+              return (
+                <button
+                  key={d.iso}
+                  type="button"
+                  onClick={() => setDate(d.iso)}
+                  aria-pressed={active}
+                  className={`flex h-14 w-16 shrink-0 cursor-pointer flex-col items-center justify-center rounded-2xl transition-colors ${
+                    active ? "bg-ink text-white" : "bg-chip text-ink hover:bg-chip-hover"
+                  }`}
+                >
+                  <span className={`text-xs ${active ? "text-white/70" : "text-muted"}`}>{d.dow}</span>
+                  <span className="text-sm font-semibold">{d.dom}</span>
+                </button>
+              );
+            })}
+          </div>
 
-      <section className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur -mx-4 px-4 py-3 sm:-mx-6 sm:px-6 border-b border-slate-800">
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col text-xs text-slate-400 gap-1">
-            Date
+          <div className="rail -mx-4 flex items-center gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+            <Pill active={sport === "both"} onClick={() => setSport("both")}>
+              All
+            </Pill>
+            <Pill active={sport === "football"} onClick={() => setSport("football")}>
+              Football
+            </Pill>
+            <Pill active={sport === "futsal"} onClick={() => setSport("futsal")}>
+              Futsal
+            </Pill>
+            <span className="mx-1 h-6 w-px shrink-0 bg-line" aria-hidden="true" />
+            <label className="relative shrink-0">
+              <span className="sr-only">Start time from</span>
+              <select
+                value={timeFrom}
+                onChange={(e) => setTimeFrom(e.target.value)}
+                className="h-10 cursor-pointer appearance-none rounded-full bg-chip pl-4 pr-9 text-sm font-medium text-ink hover:bg-chip-hover"
+              >
+                {HOURS.map((h) => (
+                  <option key={h} value={h}>
+                    From {h}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink">
+                <Chevron open={false} />
+              </span>
+            </label>
+          </div>
+
+          <div className="flex items-center gap-2">
+          <label className="relative block flex-1">
+            <span className="sr-only">Area or venue</span>
+            <svg
+              viewBox="0 0 24 24"
+              className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
+              <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
             <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-sm text-slate-100"
+              type="search"
+              inputMode="search"
+              value={area}
+              onChange={(e) => setArea(e.target.value)}
+              placeholder="Area or venue"
+              className="h-11 w-full rounded-full bg-chip pl-10 pr-4 text-base text-ink placeholder:text-muted focus:bg-white focus:outline-none focus:ring-2 focus:ring-ink"
             />
           </label>
-          <label className="flex flex-col text-xs text-slate-400 gap-1">
-            After
-            <input
-              type="time"
-              value={timeFrom}
-              onChange={(e) => setTimeFrom(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-sm text-slate-100"
-            />
-          </label>
-        </div>
-
-        <div className="flex gap-2 mt-2">
-          {(["both", "football", "futsal"] as Sport[]).map((s) => (
             <button
-              key={s}
-              onClick={() => setSport(s)}
-              className={`flex-1 capitalize text-sm rounded-lg px-3 py-2 border ${
-                sport === s
-                  ? "bg-emerald-600 border-emerald-500 text-white"
-                  : "bg-slate-900 border-slate-700 text-slate-300"
+              type="button"
+              onClick={() => setFavoritesOnly((v) => !v)}
+              aria-pressed={favoritesOnly}
+              aria-label="Show favourites only"
+              className={`flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-4 text-sm font-medium transition-colors ${
+                favoritesOnly ? "bg-ink text-white" : "bg-chip text-ink hover:bg-chip-hover"
               }`}
             >
-              {s === "both" ? "All sports" : s}
+              <StarIcon filled={favoritesOnly} />
+              Saved
             </button>
-          ))}
+          </div>
         </div>
+      </div>
 
-        <div className="flex gap-2 mt-2">
-          <input
-            type="text"
-            placeholder="Filter by area (e.g. Al Quoz, Barsha)"
-            value={area}
-            onChange={(e) => setArea(e.target.value)}
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500"
-          />
-          <button
-            onClick={() => setFavoritesOnly((v) => !v)}
-            className={`shrink-0 text-sm rounded-lg px-3 py-2 border ${
-              favoritesOnly
-                ? "bg-amber-500 border-amber-400 text-slate-950"
-                : "bg-slate-900 border-slate-700 text-slate-300"
-            }`}
-          >
-            ★ Favorites{favoritesOnly ? "" : " only"}
-          </button>
-        </div>
-      </section>
+      <main className="mx-auto max-w-5xl px-4 pb-16 pt-4 sm:px-6">
+        {!loading && !error && data && (
+          <p className="mb-3 text-sm text-body">
+            <span className="font-semibold text-ink">{grouped.length}</span> venues with 1h+ free
+          </p>
+        )}
 
-      <section className="mt-4 flex-1">
-        {loading && <p className="text-sm text-slate-400 py-8 text-center">Checking Playo…</p>}
         {error && (
-          <p className="text-sm text-red-400 py-4 text-center">
-            Couldn&apos;t load availability: {error}
-          </p>
-        )}
-        {!loading && !error && loaded && grouped.length === 0 && (
-          <p className="text-sm text-slate-400 py-8 text-center">
-            No free slots match your filters. Try an earlier time or a different date.
-          </p>
+          <div className="rounded-xl bg-white p-6 text-center shadow-card">
+            <p className="font-semibold">Couldn’t reach Playo</p>
+            <p className="mt-1 text-sm text-body">{error}</p>
+            <button
+              type="button"
+              onClick={fetchSlots}
+              className="mt-4 h-10 cursor-pointer rounded-full bg-ink px-5 text-sm font-medium text-white"
+            >
+              Retry
+            </button>
+          </div>
         )}
 
-        <ul className="flex flex-col gap-3">
-          {grouped.slice(0, visibleCount).map(([venue, courts]) => {
-            const isOpen = expanded.has(venue);
-            const sortedCourts = [...courts].sort((a, b) => b.maxDurationMin - a.maxDurationMin);
-            const best = sortedCourts[0];
-            const bestSlot = best.available[0];
-            return (
-              <li key={venue} className="bg-slate-900 border border-slate-800 rounded-xl p-3">
-                <button
-                  className="w-full flex items-start justify-between gap-2 text-left"
-                  onClick={() =>
-                    setExpanded((prev) => {
-                      const next = new Set(prev);
-                      next.has(venue) ? next.delete(venue) : next.add(venue);
-                      return next;
-                    })
-                  }
-                >
-                  <div className="min-w-0">
-                    <h2 className="font-medium text-slate-100 truncate">{venue}</h2>
-                    <p className="text-xs text-slate-500">
-                      {courts[0].area} · {courts[0].sport}
-                      {!isOpen && (
-                        <>
-                          {" "}
-                          · up to {durationLabel(best.maxDurationMin)} from {bestSlot.start} · AED{" "}
-                          {bestSlot.pricePerHourAed}/hr
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${
-                        best.maxDurationMin >= 120
-                          ? "bg-emerald-900 text-emerald-300"
-                          : best.maxDurationMin >= 90
-                          ? "bg-sky-900 text-sky-300"
-                          : "bg-slate-800 text-slate-400"
-                      }`}
-                    >
-                      {durationLabel(best.maxDurationMin)}
-                    </span>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggle(venue);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.stopPropagation();
-                          toggle(venue);
-                        }
-                      }}
-                      aria-label="Toggle favorite"
-                      className={`text-xl leading-none ${isFavorite(venue) ? "text-amber-400" : "text-slate-600"}`}
-                    >
-                      {isFavorite(venue) ? "★" : "☆"}
-                    </span>
-                    <span className="text-slate-500 text-xs">{isOpen ? "▲" : "▼"}</span>
-                  </div>
-                </button>
+        {loading && (
+          <ul className="grid gap-3 lg:grid-cols-2" aria-busy="true" aria-label="Loading pitches">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <li key={i} className="h-[92px] animate-pulse rounded-xl bg-white shadow-card" />
+            ))}
+          </ul>
+        )}
 
-                {isOpen && (
-                  <div className="flex flex-col gap-2 mt-2">
-                    {sortedCourts.map((c) => (
-                      <div key={c.court} className="border-t border-slate-800 pt-2 first:border-t-0 first:pt-0">
-                        <p className="text-xs text-slate-400 mb-1">
-                          {c.court}
-                          {c.format ? ` · ${c.format}` : ""}
-                          {c.setting ? ` · ${c.setting}` : ""}
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {c.available.map((slot) => (
-                            <a
-                              key={`${slot.start}-${slot.durationMin}`}
-                              href={c.bookingUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-xs bg-slate-800 hover:bg-slate-700 rounded-full px-2.5 py-1 text-slate-200"
-                            >
-                              {slot.start}–{slot.end} ({durationLabel(slot.durationMin)}) · AED {slot.priceAed}
-                            </a>
-                          ))}
+        {!loading && !error && loaded && data && grouped.length === 0 && (
+          <div className="rounded-xl bg-white p-8 text-center shadow-card">
+            <p className="font-semibold">Nothing free for 1h+</p>
+            <p className="mt-1 text-sm text-body">Try an earlier start time or another day.</p>
+          </div>
+        )}
+
+        {!loading && !error && (
+          <ul className="grid items-start gap-3 lg:grid-cols-2">
+            {grouped.slice(0, visibleCount).map(({ venue, courts, best }) => {
+              const open = expanded.has(venue);
+              const slot = best.available[0];
+              const fav = isFavorite(venue);
+              return (
+                <li key={venue} className="overflow-hidden rounded-xl bg-white shadow-card">
+                  <div className="flex items-start gap-2 p-4">
+                    <button
+                      type="button"
+                      onClick={() => toggleOpen(venue)}
+                      aria-expanded={open}
+                      className="min-w-0 flex-1 cursor-pointer text-left"
+                    >
+                      <h2 className="truncate text-base font-semibold leading-snug">{venue}</h2>
+                      <p className="mt-0.5 truncate text-sm capitalize text-muted">
+                        {[best.area, best.sport, best.format].filter(Boolean).join(" · ")}
+                      </p>
+                      <p className="mt-2 flex items-center gap-2 text-sm">
+                        <DurationBadge mins={best.maxDurationMin} />
+                        <span className="font-semibold">
+                          {slot.start}–{slot.end}
+                        </span>
+                        <span className="text-body">AED {slot.priceAed}</span>
+                      </p>
+                    </button>
+                    <div className="flex shrink-0 items-center">
+                      <button
+                        type="button"
+                        onClick={() => toggle(venue)}
+                        aria-label={fav ? `Remove ${venue} from saved` : `Save ${venue}`}
+                        aria-pressed={fav}
+                        className={`grid size-11 cursor-pointer place-items-center rounded-full hover:bg-chip ${
+                          fav ? "text-ink" : "text-muted"
+                        }`}
+                      >
+                        <StarIcon filled={fav} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleOpen(venue)}
+                        aria-label={open ? "Hide times" : "Show all times"}
+                        className="grid size-11 cursor-pointer place-items-center rounded-full text-ink hover:bg-chip"
+                      >
+                        <Chevron open={open} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {open && (
+                    <div className="border-t border-line px-4 pb-4">
+                      {courts.map((c) => (
+                        <div key={c.court} className="pt-3">
+                          <p className="text-sm font-medium">
+                            {c.court}
+                            <span className="font-normal text-muted">
+                              {[c.format, c.setting].filter(Boolean).map((s) => ` · ${s}`)}
+                            </span>
+                          </p>
+                          <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                            {c.available.map((s) => (
+                              <a
+                                key={`${s.start}-${s.durationMin}`}
+                                href={c.bookingUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label={`${s.start} to ${s.end}, ${dur(s.durationMin)}, AED ${s.priceAed}, book on Playo`}
+                                className={`flex flex-col items-center justify-center rounded-lg border py-2 transition-colors hover:border-ink ${
+                                  s.durationMin >= 120 ? "border-pitch/40 bg-pitch-soft/50" : "border-line"
+                                }`}
+                              >
+                                <span className="text-sm font-semibold">{s.start}</span>
+                                <span className="text-xs text-body">
+                                  {dur(s.durationMin)} · {s.priceAed}
+                                </span>
+                              </a>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                      ))}
+                      <a
+                        href={best.bookingUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-4 flex h-11 items-center justify-center rounded-full bg-ink text-sm font-medium text-white"
+                      >
+                        Book on Playo
+                      </a>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
-        {grouped.length > visibleCount && (
+        {!loading && grouped.length > visibleCount && (
           <button
+            type="button"
             onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
-            className="w-full mt-3 text-sm text-slate-300 bg-slate-900 border border-slate-800 rounded-lg py-2"
+            className="mx-auto mt-4 flex h-11 cursor-pointer items-center rounded-full bg-chip px-6 text-sm font-medium hover:bg-chip-hover"
           >
-            Show more ({grouped.length - visibleCount} left)
+            Show {Math.min(PAGE_SIZE, grouped.length - visibleCount)} more
           </button>
         )}
-      </section>
-
-      <footer className="text-center text-[11px] text-slate-600 pt-6 pb-2">
-        Unofficial Playo data, personal use. Prices/availability can change on Playo before you book.
-      </footer>
-    </main>
+      </main>
+    </div>
   );
 }

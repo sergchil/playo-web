@@ -1,26 +1,49 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Design tokens — Uber-derived: black/white, pill controls, whisper shadows.
+   One functional accent (pitch green) reserved for bookable-duration status. */
+@theme {
+  --font-sans: var(--font-dm-sans), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-ink: #000000;
+  --color-body: #4b4b4b;
+  --color-muted: #6f6f6f;
+  --color-chip: #efefef;
+  --color-chip-hover: #e2e2e2;
+  --color-line: #ebebeb;
+  --color-canvas: #f6f6f6;
+
+  --color-pitch: #0a7a3b;
+  --color-pitch-soft: #e3f3e9;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1;
+}
+
+/* Hide scrollbar on horizontal chip rails, keep them scrollable. */
+.rail {
+  scrollbar-width: none;
+}
+.rail::-webkit-scrollbar {
+  display: none;
+}
+.rail-fade {
+  mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }

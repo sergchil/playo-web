@@ -1,4 +1,4 @@
-const CACHE = "playo-slots-shell-v1";
+const CACHE = "playo-slots-shell-v2";
 const SHELL_ASSETS = ["/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {

@@ -1,0 +1,93 @@
+{
+  "version": "0.3.2",
+  "project": {
+    "root": "/home/sergey/playo-web",
+    "frontendRoot": "/home/sergey/playo-web",
+    "stack": "react",
+    "styling": "tailwind",
+    "bundler": "unknown",
+    "reactVersion": "19.2.8",
+    "tailwindVersion": "^4",
+    "hasRails": false,
+    "hasTailwindConfig": false,
+    "hasStorybook": false
+  },
+  "score": 97,
+  "grade": "Great",
+  "counts": {
+    "error": 0,
+    "warning": 4,
+    "info": 2
+  },
+  "stats": {
+    "totalFindings": 6,
+    "affectedFiles": 2,
+    "elapsedMs": 39,
+    "analyzers": [
+      "design-tokens",
+      "microcopy",
+      "a11y",
+      "forms",
+      "ui-states",
+      "stack",
+      "variants",
+      "classes"
+    ]
+  },
+  "diagnostics": [
+    {
+      "ruleId": "design/color-cluster",
+      "severity": "warning",
+      "category": "design",
+      "message": "4 near-duplicate colors clustered around #ffffff (4 uses): #ffffff, #efefef, #ebebeb, #f6f6f6",
+      "file": "src/app/layout.tsx",
+      "line": 34,
+      "fix": "Consolidate near-duplicate colors into a single token. Same hue ≠ same intent — pick one."
+    },
+    {
+      "ruleId": "design/arbitrary-tailwind-value",
+      "severity": "warning",
+      "category": "design",
+      "message": "1 arbitrary Tailwind value bypasses the scale (h-[92px])",
+      "file": "src/app/page.tsx",
+      "line": 299,
+      "fix": "Use a scale token (`p-3`, `text-sm`) instead of `[13px]`/`[#abc]`. Extend the config if the token is genuinely missing."
+    },
+    {
+      "ruleId": "copy/cta-too-long",
+      "severity": "warning",
+      "category": "copy",
+      "message": "Button text \"setVisibleCount((v) => v + PAGE_SIZE)\n            className…\" is 20 words.",
+      "file": "src/app/page.tsx",
+      "line": 409,
+      "fix": "CTAs should be 1–4 words, verb-first, no period. \"Save changes\" not \"Click here to save your changes.\""
+    },
+    {
+      "ruleId": "a11y/empty-heading",
+      "severity": "warning",
+      "category": "a11y",
+      "message": "<h2> renders no static text. Either remove it or set aria-label, otherwise screen-reader users hit a void heading.",
+      "file": "src/app/page.tsx",
+      "line": 326,
+      "fix": "Either give the heading text or remove it. Empty headings break document structure for screen readers."
+    },
+    {
+      "ruleId": "design/hover-no-effect",
+      "severity": "info",
+      "category": "design",
+      "message": "className has hover:* matching its base — there's no visible state change. h-10 cursor-pointer appearance-none rounded-full bg-chip pl-4 pr-9 text-sm font-",
+      "file": "src/app/page.tsx",
+      "line": 225,
+      "fix": "Either give the hover state a different token or drop the hover: variant entirely."
+    },
+    {
+      "ruleId": "design/hover-no-effect",
+      "severity": "info",
+      "category": "design",
+      "message": "className has hover:* matching its base — there's no visible state change. mx-auto mt-4 flex h-11 cursor-pointer items-center rounded-full bg-chip px-6 tex",
+      "file": "src/app/page.tsx",
+      "line": 412,
+      "fix": "Either give the hover state a different token or drop the hover: variant entirely."
+    }
+  ]
+}
