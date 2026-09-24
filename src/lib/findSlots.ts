@@ -94,6 +94,63 @@ function bookableWindows(
   return out;
 }
 
+export interface FreeWindow {
+  /** First bookable start (HH:MM). */
+  from: string;
+  /** When the free stretch ends (HH:MM; "00:00" = midnight). */
+  to: string;
+  durationMin: number;
+  pricePerHourAed: number;
+}
+
+/**
+ * Continuous free stretches on a court, clipped to [tFrom, tTo] and to "now"
+ * for today. This is what a person actually needs: "free 20:00 → 00:00",
+ * then they pick any start inside it on Playo.
+ */
+function freeWindows(
+  court: CourtInfo,
+  slotLen: number,
+  date: string,
+  tFrom: number,
+  tTo: number | null
+): FreeWindow[] {
+  const free = new Map<number, number>();
+  for (const s of court.slotInfo || []) {
+    if ((s.status || 0) > 0) free.set(mins(s.time), s.price || 0);
+  }
+  const now = nowInDubai();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+    now.getDate()
+  ).padStart(2, "0")}`;
+  const earliest = date === todayStr ? now.getHours() * 60 + now.getMinutes() + (court.bookingTimeBuffer || 0) : 0;
+  const minLen = Math.max(MIN_USEFUL_MIN, (court.slotConfig?.minSlots ?? 1) * slotLen);
+  const starts = Array.from(free.keys())
+    .filter((t) => t >= tFrom && t >= earliest && (tTo === null || t <= tTo))
+    .sort((a, b) => a - b);
+  const out: FreeWindow[] = [];
+  let i = 0;
+  while (i < starts.length) {
+    let j = i;
+    while (j + 1 < starts.length && starts[j + 1] === starts[j] + slotLen) j++;
+    const from = starts[i];
+    const end = starts[j] + slotLen;
+    const durationMin = end - from;
+    if (durationMin >= minLen) {
+      let total = 0;
+      for (let t = from; t < end; t += slotLen) total += free.get(t) || 0;
+      out.push({
+        from: hhmm(from),
+        to: hhmm(end),
+        durationMin,
+        pricePerHourAed: Math.round((total * 60) / durationMin),
+      });
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
 export interface SlotResult {
   venue: string;
   area: string | null;
@@ -107,6 +164,9 @@ export interface SlotResult {
   slotLengthMin: number;
   available: BookableStart[];
   maxDurationMin: number;
+  windows: FreeWindow[];
+  /** Longest single booking the venue allows on this court (its maxSlots). */
+  maxBookMin: number;
   bookingUrl: string;
 }
 
@@ -144,6 +204,8 @@ async function venueSlots(
       slotLengthMin: slotLen,
       available: starts,
       maxDurationMin: starts[0].durationMin,
+      windows: freeWindows(court, slotLen, date, tFrom, tTo),
+      maxBookMin: (court.slotConfig?.maxSlots ?? 10000) * slotLen,
       bookingUrl: v.bookingUrl,
     });
   }
